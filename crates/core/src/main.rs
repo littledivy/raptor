@@ -1,22 +1,34 @@
-//
 use deno_core::error::AnyError;
+use deno_core::serde_json;
 use deno_core::serde_json::json;
 use deno_core::FsModuleLoader;
+
 use deno_runtime::permissions::Permissions;
 use deno_runtime::web_worker::WebWorker;
 use deno_runtime::web_worker::WebWorkerHandle;
 use deno_runtime::web_worker::WebWorkerOptions;
+use deno_runtime::web_worker::WorkerEvent;
+
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
+
 use serde::Serialize;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::io::{self, Write};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+
 use url::Url;
-pub fn block_run<F, R>(future: F) -> R
+
+mod loader;
+
+use crate::loader::prepare_module;
+
+fn block_run<F, R>(future: F) -> R
 where
     F: std::future::Future<Output = R>,
 {
@@ -35,7 +47,6 @@ enum Method {
     Get,
     Post,
     Put,
-    All,
     Delete,
     Head,
     Options,
@@ -68,20 +79,26 @@ async fn main() -> Result<(), AnyError> {
                 create_web_worker_cb,
                 attach_inspector: false,
                 maybe_inspector_server: None,
-                use_deno_namespace: false,
+                use_deno_namespace: true,
                 module_loader,
-                runtime_version: "1.8.0".to_string(),
+                runtime_version: "1.8.1".to_string(),
                 ts_version: "xxx".to_string(),
                 no_color: false,
                 get_error_class_fn: None,
             };
 
-            let js_path = Path::new("examples/hello_world.js");
-
-            let main_module = deno_core::resolve_path(&js_path.to_string_lossy()).unwrap();
+            let source = Path::new("./examples/hello_world.js");
+            let mut fd = tempfile::NamedTempFile::new().unwrap();
+            writeln!(
+                fd,
+                "{}",
+                &prepare_module(&source.canonicalize().unwrap().to_string_lossy())
+            );
+            let specifier = fd.into_temp_path();
+            let main_module = deno_core::resolve_path(&specifier.to_string_lossy()).unwrap();
             let permissions = Permissions::allow_all();
             let mut worker = WebWorker::from_options(
-                "worker".to_string(),
+                source.to_string_lossy().to_string(),
                 permissions,
                 main_module.clone(),
                 1,
@@ -90,7 +107,8 @@ async fn main() -> Result<(), AnyError> {
 
             // Prepare runtime.
             worker.bootstrap(&options);
-            block_run(worker.execute_module(&main_module));
+
+            block_run(worker.execute_module(&main_module)).unwrap();
             let handle = worker.thread_safe_handle();
             handle_sender.send(handle).unwrap();
             block_run(worker.run_event_loop());
@@ -141,8 +159,21 @@ async fn main() -> Result<(), AnyError> {
                     let r = h.post_message(req.to_string().into_boxed_str().into_boxed_bytes());
                     assert!(r.is_ok());
 
-                    h.get_event().await.unwrap();
-                    Ok::<Response<Body>, Infallible>(Response::new(Body::from("Hello World!")))
+                    let event = h.get_event().await.unwrap();
+                    let response = match event {
+                        Some(e) => match e {
+                            WorkerEvent::Message(e) => {
+                                let response: serde_json::Value =
+                                    serde_json::from_slice(&(*e).to_vec()).unwrap();
+                                Response::new(Body::from(response["response"]["body"].to_string()))
+                            }
+                            WorkerEvent::Error(e) | WorkerEvent::TerminalError(e) => {
+                                Response::new(Body::from(e.to_string()))
+                            }
+                        },
+                        None => Response::new(Body::from("No response from worker")),
+                    };
+                    Ok::<Response<Body>, Infallible>(response)
                 }
             }))
         }
