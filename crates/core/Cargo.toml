@@ -1,0 +1,11 @@
+[package]
+name = "raptor"
+version = "0.1.0"
+authors = ["Divy Srivastava <dj.srivastava23@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hyper = "0.14.4"
+deno_runtime = "0.9.3"
+deno_core = "0.80.2"
+tokio = { version = "1", features = ["full"] }
