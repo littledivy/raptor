@@ -1,3 +1,5 @@
+// import { handle } from "FILE";
+
 onmessage = function (e) {
     const request = {
         ...e.data,

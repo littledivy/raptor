@@ -8,6 +8,7 @@ use deno_runtime::web_worker::WebWorkerHandle;
 use deno_runtime::web_worker::WebWorkerOptions;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -26,6 +27,22 @@ where
         .build()
         .unwrap()
         .block_on(future)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+enum Method {
+    Get,
+    Post,
+    Put,
+    All,
+    Delete,
+    Head,
+    Options,
+    Patch,
+    Trace,
+    Connect,
+    Unknown,
 }
 
 #[tokio::main]
@@ -98,11 +115,27 @@ async fn main() -> Result<(), AnyError> {
                         .iter()
                         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap().to_string()))
                         .collect::<HashMap<String, String>>();
+
+                    let method = match request.method() {
+                        &hyper::Method::GET => Method::Get,
+                        &hyper::Method::POST => Method::Post,
+                        &hyper::Method::PUT => Method::Put,
+                        &hyper::Method::DELETE => Method::Delete,
+                        &hyper::Method::HEAD => Method::Head,
+                        &hyper::Method::OPTIONS => Method::Options,
+                        &hyper::Method::CONNECT => Method::Connect,
+                        &hyper::Method::PATCH => Method::Patch,
+                        &hyper::Method::TRACE => Method::Trace,
+                        _ => Method::Unknown,
+                    };
+
                     let body = hyper::body::to_bytes(request.into_body()).await;
+
                     let req = json!({
                         "body": body.unwrap().to_vec(),
                         "query": query,
                         "headers": headers,
+                        "method": method,
                     });
 
                     let r = h.post_message(req.to_string().into_boxed_str().into_boxed_bytes());
