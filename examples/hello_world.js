@@ -1,5 +1,19 @@
 onmessage = function (e) {
-    console.log("Handler called.")
-    console.log(e.data)
-    postMessage("Done");
+    const request = {
+        ...e.data,
+        send: (response) => {
+            postMessage({ type: "send", response });
+        },
+        redirect: (response) => {
+            postMessage({ type: "send", response })
+        },
+    }
+    
+    handle(request);
 }
+
+function handle(request) {
+    console.log(request);
+    request.send("Hello");
+}
+

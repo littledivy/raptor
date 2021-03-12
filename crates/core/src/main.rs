@@ -36,7 +36,7 @@ async fn main() -> Result<(), AnyError> {
         std::thread::spawn(move || {
             let module_loader = Rc::new(FsModuleLoader);
             let create_web_worker_cb = Arc::new(|_| {
-                todo!("Web workers are not supported in the example");
+                todo!("Not supported at the moment.");
             });
 
             let options = WebWorkerOptions {
@@ -45,7 +45,7 @@ async fn main() -> Result<(), AnyError> {
                 debug_flag: false,
                 unstable: false,
                 ca_data: None,
-                user_agent: "hello_runtime".to_string(),
+                user_agent: "RaptorDeno".to_string(),
                 seed: None,
                 js_error_create_fn: None,
                 create_web_worker_cb,
@@ -53,8 +53,8 @@ async fn main() -> Result<(), AnyError> {
                 maybe_inspector_server: None,
                 use_deno_namespace: false,
                 module_loader,
-                runtime_version: "x".to_string(),
-                ts_version: "x".to_string(),
+                runtime_version: "1.8.0".to_string(),
+                ts_version: "xxx".to_string(),
                 no_color: false,
                 get_error_class_fn: None,
             };
@@ -93,11 +93,18 @@ async fn main() -> Result<(), AnyError> {
                         .query_pairs()
                         .into_owned()
                         .collect::<HashMap<String, String>>();
+                    let headers = request
+                        .headers()
+                        .iter()
+                        .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap().to_string()))
+                        .collect::<HashMap<String, String>>();
                     let body = hyper::body::to_bytes(request.into_body()).await;
                     let req = json!({
                         "body": body.unwrap().to_vec(),
                         "query": query,
+                        "headers": headers,
                     });
+
                     let r = h.post_message(req.to_string().into_boxed_str().into_boxed_bytes());
                     assert!(r.is_ok());
 
